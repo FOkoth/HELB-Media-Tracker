@@ -10,7 +10,7 @@ Sources:
 Appends only NEW mentions to Google Sheet (deduplicated by link/title+date).
 """
 
-import os, sys, time
+import os, sys, time, argparse
 import pandas as pd
 import feedparser
 import requests
@@ -65,6 +65,11 @@ HTML_SOURCES = {
     "Tuko (Money)": "https://www.tuko.co.ke/business-economy/money/",
 }
 
+# ---------------- ARGPARSE ----------------
+parser = argparse.ArgumentParser()
+parser.add_argument("--force", action="store_true", help="Append all matches, ignoring deduplication")
+args = parser.parse_args()
+
 # ---------------- AUTH ----------------
 SCOPES = [
     "https://spreadsheets.google.com/feeds",
@@ -89,10 +94,14 @@ except Exception as e:
     sys.exit(1)
 
 # ---------------- Existing Records ----------------
-existing_records = worksheet.get_all_records()
-existing_links = {str(r.get("link", "")).strip() for r in existing_records if r.get("link")}
-existing_sigs = {(str(r.get("title", "")).strip(), str(r.get("published", "")).strip()) for r in existing_records}
-print(f"✅ Existing rows: {len(existing_records)}")
+if args.force:
+    existing_links, existing_sigs = set(), set()
+    print("⚠️ Force mode ON — ignoring deduplication, will append all results.")
+else:
+    existing_records = worksheet.get_all_records()
+    existing_links = {str(r.get("link", "")).strip() for r in existing_records if r.get("link")}
+    existing_sigs = {(str(r.get("title", "")).strip(), str(r.get("published", "")).strip()) for r in existing_records}
+    print(f"✅ Existing rows: {len(existing_records)}")
 
 # ---------------- Sentiment Analyzer ----------------
 nltk.download("vader_lexicon", quiet=True)
@@ -186,7 +195,7 @@ new_rows = []
 for a in articles:
     row = process_gnews(a)
     sig = (row[0], row[1])
-    if (row[4] and row[4] in existing_links) or (sig in existing_sigs):
+    if not args.force and ((row[4] and row[4] in existing_links) or (sig in existing_sigs)):
         continue
     if contains_keywords(row[0] + " " + row[3]):
         new_rows.append(row)
@@ -196,7 +205,7 @@ for source, url in RSS_FEEDS.items():
     rss_rows = process_rss(source, url)
     for row in rss_rows:
         sig = (row[0], row[1])
-        if (row[4] and row[4] in existing_links) or (sig in existing_sigs):
+        if not args.force and ((row[4] and row[4] in existing_links) or (sig in existing_sigs)):
             continue
         new_rows.append(row)
 
@@ -205,7 +214,7 @@ for source, url in HTML_SOURCES.items():
     html_rows = process_html(source, url)
     for row in html_rows:
         sig = (row[0], row[1])
-        if (row[4] and row[4] in existing_links) or (sig in existing_sigs):
+        if not args.force and ((row[4] and row[4] in existing_links) or (sig in existing_sigs)):
             continue
         new_rows.append(row)
 
