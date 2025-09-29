@@ -15,27 +15,30 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ---------- NAVIGATION + GLOBAL STYLES ----------
+# ---------- GLOBAL STYLES ----------
 st.markdown(
     """
     <style>
-    /* Navigation bar styling */
+    /* Top navigation/header */
     .stApp header {background-color: #B8860B;} /* dark gold */
-    section[data-testid="stSidebar"] {
-        background-color: #228B22; /* green */
+
+    /* Navigation items (Dashboard, Mentions, etc.) */
+    div[data-testid="stSidebarNav"] ul li a {
+        background-color: #228B22; /* green background */
+        color: white !important;   /* white text */
+        border-radius: 5px;
+        padding: 5px 10px;
     }
+    div[data-testid="stSidebarNav"] ul li a:hover {
+        background-color: white !important;
+        color: black !important;
+    }
+
+    /* Sidebar filter labels */
     section[data-testid="stSidebar"] .stSelectbox label,
     section[data-testid="stSidebar"] .stTextInput label,
     section[data-testid="stSidebar"] .stButton button {
         color: white !important;
-    }
-    section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] {
-        background-color: white !important;
-        color: black !important;
-    }
-    section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"]:hover {
-        background-color: #f5f5f5 !important;
-        color: black !important;
     }
     </style>
     """,
@@ -75,15 +78,23 @@ def load_data():
         df["YEAR"] = df["YEAR"].astype("Int64")
         df["YEAR"] = df["YEAR"].astype(str).replace("<NA>", "")
 
-        # Month
-        df["MONTH"] = df["published_parsed"].dt.strftime("%B").fillna("")
+        # Month (ordered Jan–Dec)
+        month_order = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
+        df["MONTH"] = pd.Categorical(
+            df["published_parsed"].dt.strftime("%B").fillna(""),
+            categories=month_order,
+            ordered=True
+        )
 
         # Quarter (Q1, Q2 etc.)
         df["QUARTER"] = df["published_parsed"].dt.quarter.fillna("").apply(
             lambda x: f"Q{int(x)}" if str(x).isdigit() else ""
         )
 
-        # Financial Year (simple July–June assumption)
+        # Financial Year (July–June assumption)
         fy = []
         for dt in df["published_parsed"]:
             if pd.isna(dt):
@@ -144,7 +155,16 @@ tonality_filter = st.sidebar.selectbox("Filter by Tonality", ["All"] + sorted(df
 fin_year_filter = st.sidebar.selectbox("Filter by Financial Year", ["All"] + sorted(df["FIN_YEAR"].unique()))
 quarter_filter = st.sidebar.selectbox("Filter by Quarter", ["All"] + sorted([q for q in df["QUARTER"].unique() if q]))
 year_filter = st.sidebar.selectbox("Filter by Year", ["All"] + sorted([y for y in df["YEAR"].unique() if y]))
-month_filter = st.sidebar.selectbox("Filter by Month", ["All"] + sorted([m for m in df["MONTH"].unique() if m]))
+
+# Months in correct order (Jan–Dec)
+month_order = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+]
+month_filter = st.sidebar.selectbox(
+    "Filter by Month",
+    ["All"] + [m for m in month_order if m in df["MONTH"].unique()]
+)
 
 filtered_df = df.copy()
 if tonality_filter != "All":
@@ -198,7 +218,7 @@ for i in filtered_df.index:
     row = filtered_df.loc[i]
     tonality = st.session_state["tonality_map"].get(i, row["TONALITY"])
     bg_color = COLORS.get(tonality, "#ffffff")
-    text_color = "#ffffff"  # ensure white text for all, including Neutral
+    text_color = "#ffffff"  # white text for all, including Neutral
 
     st.markdown(
         f"""
