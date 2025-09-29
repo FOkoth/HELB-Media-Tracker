@@ -100,7 +100,7 @@ def load_data():
     months = df["published_parsed"].dt.strftime("%B").fillna("")
     df["MONTH"] = pd.Categorical(months, categories=month_order, ordered=True)
 
-    # ---------- AMENDED QUARTER (Jul–Jun FY) ----------
+    # ---------- FIXED QUARTER (FY Jul–Jun) ----------
     def get_fy_quarter(dt):
         if pd.isna(dt):
             return ""
