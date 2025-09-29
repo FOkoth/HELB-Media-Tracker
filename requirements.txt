@@ -13,3 +13,4 @@ plotly
 plotly
 matplotlib
 numpy
+wordcloud
