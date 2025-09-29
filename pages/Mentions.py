@@ -1,225 +1,166 @@
-# pages/Mentions.py
 import streamlit as st
 import pandas as pd
-import os
+import numpy as np
+from datetime import datetime
 
-# ---------- CONFIG ----------
-LOCAL_CSV = "persistent_mentions.csv"
-EDITOR_PASSWORD = "MyHardSecret123"
+st.set_page_config(page_title="HELB Mentions", layout="wide")
 
-# ---------- PASSWORD ----------
-password = st.sidebar.text_input("Enter edit password", type="password")
-is_editor = password == EDITOR_PASSWORD
-if is_editor:
-    st.sidebar.success("Editor mode ✅")
-else:
-    st.sidebar.info("Read-only mode 🔒")
-
-# ---------- LOAD DATA ----------
+# ----------------------------
+# Load Data
+# ----------------------------
 @st.cache_data
 def load_data():
-    # Load persistent CSV if it exists, else Google Sheet
-    if os.path.exists(LOCAL_CSV):
-        df = pd.read_csv(LOCAL_CSV)
+    sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQmqNnR4KiN1sCufN6UatXqu9T8VXLFe0Xt7KgxE4j0h9n07Gm1i6qM6FC9tPYO0M/pub?output=csv"
+    df = pd.read_csv(sheet_url)
+
+    # Ensure DATE column exists and is datetime
+    if "DATE" in df.columns:
+        df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
     else:
-        sheet_url = st.secrets["gcp"]["sheet_url"]
-        df = pd.read_csv(sheet_url)
+        df["DATE"] = pd.NaT
 
-    df.columns = [c.strip().lower() for c in df.columns]
+    # Extract Year, Month, Quarter
+    df["YEAR"] = df["DATE"].dt.year
+    df["MONTH"] = df["DATE"].dt.month_name().str[:3]  # Jan, Feb, ...
+    df["QUARTER"] = df["DATE"].dt.quarter.apply(lambda x: f"Q{x}" if pd.notna(x) else np.nan)
 
-    # Parse published datetime
-    if "published" in df.columns:
-        df["published_parsed"] = pd.to_datetime(df["published"], errors="coerce", utc=True)
-        try:
-            df["published_parsed"] = df["published_parsed"].dt.tz_convert("Africa/Nairobi")
-        except Exception:
-            pass
-        df["DATE"] = df["published_parsed"].dt.strftime("%d-%b-%Y")
-        df["TIME"] = df["published_parsed"].dt.strftime("%H:%M")
-        df["YEAR"] = df["published_parsed"].dt.year.dropna().astype(int).astype(str)
+    # Financial Year (Kenyan: runs July–June)
+    def get_financial_year(date):
+        if pd.isna(date):
+            return np.nan
+        year = date.year
+        if date.month >= 7:
+            return f"{year}/{year+1}"
+        else:
+            return f"{year-1}/{year}"
+    df["FIN_YEAR"] = df["DATE"].apply(get_financial_year)
 
-        # Financial year: July–June
-        df["FIN_YEAR"] = df["published_parsed"].apply(
-            lambda x: f"{x.year}/{x.year+1}" if x.month >= 7 else f"{x.year-1}/{x.year}"
-            if pd.notnull(x) else None
-        )
+    # Clean TONALITY if missing
+    if "TONALITY" not in df.columns:
+        df["TONALITY"] = "Neutral"
 
-        # Quarters: Q1–Q4
-        df["QUARTER"] = df["published_parsed"].dt.quarter.apply(
-            lambda q: f"Q{q}" if pd.notnull(q) else None
-        )
-
-        # Month name
-        df["MONTH"] = df["published_parsed"].dt.month_name().where(df["published_parsed"].notna())
-    else:
-        df["published_parsed"] = pd.NaT
-        df["DATE"], df["TIME"], df["YEAR"], df["FIN_YEAR"], df["QUARTER"], df["MONTH"] = "", "", "", "", "", ""
-
-    # Ensure required cols exist
-    for col in ["title", "summary", "source", "tonality", "link"]:
-        if col not in df.columns:
-            df[col] = ""
-        df[col] = df[col].fillna("")
-
-    rename_map = {
-        "title": "TITLE",
-        "summary": "SUMMARY",
-        "source": "SOURCE",
-        "tonality": "TONALITY",
-        "link": "LINK",
-    }
-    df = df.rename(columns=rename_map)
     return df
 
-# ---------- SESSION STATE ----------
-if "mentions_df" not in st.session_state:
-    st.session_state["mentions_df"] = load_data()
-df = st.session_state["mentions_df"]
+df = load_data()
 
-if df.empty:
-    st.info("No data available.")
-    st.stop()
-
-df = df.sort_values(by="published_parsed", ascending=False).reset_index(drop=True)
-
-# Tonality state
-if "tonality_map" not in st.session_state:
-    st.session_state["tonality_map"] = {i: df.at[i, "TONALITY"] for i in df.index}
-
-# ---------- COLOR CODES ----------
-COLORS = {
-    "Positive": "#3b8132",
-    "Neutral": "#6E6F71",
-    "Negative": "#d1001f"
-}
-
-# ---------- STYLING ----------
-st.markdown("""
+# ----------------------------
+# Sidebar Navigation
+# ----------------------------
+st.markdown(
+    """
     <style>
-    /* Sidebar */
+    /* Sidebar background */
     section[data-testid="stSidebar"] {
         background-color: #B8860B; /* dark gold */
     }
-    /* Sidebar nav items */
-    section[data-testid="stSidebar"] .stMarkdown a {
-        background-color: #228B22; /* green */
+    /* Nav items */
+    .css-1d391kg, .css-1v3fvcr, .css-16idsys {
+        background-color: green !important;
         color: white !important;
+        border-radius: 8px;
         padding: 6px 12px;
-        border-radius: 4px;
-        display: block;
-        margin-bottom: 5px;
-        text-decoration: none;
+        margin: 4px 0;
     }
-    section[data-testid="stSidebar"] .stMarkdown a:hover {
+    .css-1d391kg:hover, .css-1v3fvcr:hover, .css-16idsys:hover {
         background-color: white !important;
         color: black !important;
     }
+    /* Neutral tonality card */
+    .neutral-card {
+        background-color: grey !important;
+        color: white !important;
+        padding: 8px;
+        border-radius: 8px;
+    }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
-# ---------- FILTERS ----------
-filters = {}
+# ----------------------------
+# Filters
+# ----------------------------
+st.sidebar.header("Filters")
 
 tonality_filter = st.sidebar.selectbox(
-    "Filter by Tonality", ["All"] + sorted([t for t in df["TONALITY"].dropna().unique()])
+    "Filter by Tonality",
+    ["All"] + sorted(df["TONALITY"].dropna().unique())
 )
-filters["TONALITY"] = tonality_filter
 
-fin_years = sorted([fy for fy in df["FIN_YEAR"].dropna().unique()])
-fin_year_filter = st.sidebar.selectbox("Filter by Financial Year", ["All"] + fin_years)
-filters["FIN_YEAR"] = fin_year_filter
+# Ordered months
+month_order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-quarters = ["Q1", "Q2", "Q3", "Q4"]
-quarter_filter = st.sidebar.selectbox("Filter by Quarter", ["All"] + quarters)
-filters["QUARTER"] = quarter_filter
+month_filter = st.sidebar.selectbox(
+    "Filter by Month",
+    ["All"] + month_order
+)
 
-years = sorted([str(int(y)) for y in df["YEAR"].dropna().unique()])
-year_filter = st.sidebar.selectbox("Filter by Year", ["All"] + years)
-filters["YEAR"] = year_filter
+quarter_filter = st.sidebar.selectbox(
+    "Filter by Quarter",
+    ["All"] + [f"Q{i}" for i in range(1, 5)]
+)
 
-months = ["January","February","March","April","May","June",
-          "July","August","September","October","November","December"]
-month_filter = st.sidebar.selectbox("Filter by Month", ["All"] + months)
-filters["MONTH"] = month_filter
+year_filter = st.sidebar.selectbox(
+    "Filter by Year",
+    ["All"] + sorted(df["YEAR"].dropna().astype(int).unique().tolist())
+)
 
-# Apply filters
+fin_year_filter = st.sidebar.selectbox(
+    "Filter by Financial Year",
+    ["All"] + sorted(df["FIN_YEAR"].dropna().unique())
+)
+
+# ----------------------------
+# Apply Filters
+# ----------------------------
 filtered_df = df.copy()
-for col, val in filters.items():
-    if val != "All" and col in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df[col] == val]
+if tonality_filter != "All":
+    filtered_df = filtered_df[filtered_df["TONALITY"] == tonality_filter]
+if month_filter != "All":
+    filtered_df = filtered_df[filtered_df["MONTH"] == month_filter]
+if quarter_filter != "All":
+    filtered_df = filtered_df[filtered_df["QUARTER"] == quarter_filter]
+if year_filter != "All":
+    filtered_df = filtered_df[filtered_df["YEAR"] == year_filter]
+if fin_year_filter != "All":
+    filtered_df = filtered_df[filtered_df["FIN_YEAR"] == fin_year_filter]
 
-# ---------- HEADER ----------
-st.markdown(
-    f"""
-    <div style="background-color:#B8860B; padding:12px; border-radius:6px; text-align:center;">
-        <h2 style="color:white; margin:0;">📰 Mentions — Media Coverage ({len(filtered_df)})</h2>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# ----------------------------
+# Display Mentions
+# ----------------------------
+st.title("HELB Media Mentions")
 
-# ---------- EDITOR PANEL ----------
-if is_editor:
-    st.sidebar.subheader("Edit Tonality")
-    edited_values = {}
-    with st.sidebar.container():
-        st.markdown('<div style="max-height:600px; overflow-y:auto; padding-right:5px;">', unsafe_allow_html=True)
-        for i in df.index:
-            current = st.session_state["tonality_map"][i]
-            new_val = st.selectbox(
-                f"{i+1}. {df.at[i, 'TITLE'][:50]}...",
-                options=["Positive", "Neutral", "Negative"],
-                index=["Positive","Neutral","Negative"].index(current) if current in ["Positive","Neutral","Negative"] else 1,
-                key=f"tonality_{i}"
-            )
-            edited_values[i] = new_val
-        st.markdown('</div>', unsafe_allow_html=True)
+if filtered_df.empty:
+    st.warning("No mentions found for the selected filters.")
+else:
+    for _, row in filtered_df.iterrows():
+        tonality = row.get("TONALITY", "Neutral")
+        date = row.get("DATE", "")
+        source = row.get("SOURCE", "Unknown Source")
+        title = row.get("TITLE", "No Title")
 
-    if st.sidebar.button("Execute Update"):
-        for idx, val in edited_values.items():
-            st.session_state["tonality_map"][idx] = val
-        updated_df = df.copy()
-        updated_df["TONALITY"] = [st.session_state["tonality_map"][i] for i in df.index]
-        updated_df.to_csv(LOCAL_CSV, index=False)
-        st.sidebar.success("Tonality changes applied and saved!")
+        # Background color based on tonality
+        if tonality == "Positive":
+            bg_color = "#4CAF50"  # Green
+            text_color = "white"
+        elif tonality == "Negative":
+            bg_color = "#F44336"  # Red
+            text_color = "white"
+        elif tonality == "Neutral":
+            bg_color = "grey"
+            text_color = "white"
+        else:
+            bg_color = "#2196F3"  # Blue default
+            text_color = "white"
 
-# ---------- DISPLAY MENTIONS ----------
-for i in filtered_df.index:
-    row = filtered_df.loc[i]
-    tonality = st.session_state["tonality_map"].get(i, row["TONALITY"])
-    bg_color = COLORS.get(tonality, "#ffffff")
-    text_color = "#ffffff" if tonality in ["Positive", "Negative", "Neutral"] else "#000000"
-
-    st.markdown(
-        f"""
-        <div style="
-            background-color:{bg_color};
-            color:{text_color};
-            padding:15px;
-            border-radius:8px;
-            margin-bottom:10px;
-        ">
-            <b>{i+1}. {row['DATE']} {row['TIME']}</b><br>
-            <b>Source:</b> {row['SOURCE']}<br>
-            <b>Title:</b> {row['TITLE']}<br>
-            <b>Summary:</b> {row['SUMMARY']}<br>
-            <b>Tonality:</b> {tonality}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    if str(row["LINK"]).startswith("http"):
-        st.markdown(f"[🔗 Read Full Story]({row['LINK']})")
-    st.markdown("---")
-
-# ---------- DOWNLOAD ----------
-st.subheader("Export Updated Mentions")
-export_df = filtered_df.copy()
-export_df["TONALITY"] = [st.session_state["tonality_map"].get(i, row["TONALITY"]) for i, row in filtered_df.iterrows()]
-csv_bytes = export_df.to_csv(index=False).encode("utf-8")
-st.download_button(
-    "📥 Download Updated Mentions CSV",
-    data=csv_bytes,
-    file_name="updated_mentions.csv",
-    mime="text/csv"
-)
+        st.markdown(
+            f"""
+            <div style="background-color:{bg_color}; color:{text_color}; padding:10px;
+                        border-radius:8px; margin-bottom:8px;">
+                <b>{title}</b><br>
+                <small>{date} | {source} | Tonality: {tonality}</small>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
