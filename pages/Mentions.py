@@ -257,7 +257,7 @@ if is_editor:
 st.markdown(
     f"""
     <div style="background-color:#B8860B; color:white; padding:12px; border-radius:6px; margin-bottom:16px;">
-        <strong>📰 Mentions — Media Coverage</strong> &nbsp;&nbsp; <span style="opacity:0.95">({len(df_filtered)} results)</span>
+        <strong>📰 MENTIONS — MEDIA COVERAGE</strong> &nbsp;&nbsp; <span style="opacity:0.95">({len(df_filtered)} results)</span>
     </div>
     """,
     unsafe_allow_html=True
