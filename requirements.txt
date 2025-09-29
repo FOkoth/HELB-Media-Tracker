@@ -9,3 +9,9 @@ feedparser
 gnews
 nltk
 openpyxl
+
+streamlit
+pandas
+plotly
+gspread
+oauth2client
