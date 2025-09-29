@@ -1,0 +1,11 @@
+streamlit
+gspread
+oauth2client
+pandas
+requests
+beautifulsoup4
+lxml
+feedparser
+gnews
+nltk
+openpyxl
